@@ -2,7 +2,7 @@
 import argparse
 from pathlib import Path
 import numpy as np
-from .model import Problem
+from .model import Problem, COLLISION_PENALTY
 
 
 def render(results_dir, scenario, seed=42, output=None):
@@ -21,7 +21,7 @@ def render(results_dir, scenario, seed=42, output=None):
         if not filename.exists():
             continue
         data = np.load(filename)
-        feasible = np.flatnonzero(data['objectives'][:, 1] < 1.)
+        feasible = np.flatnonzero(data['objectives'][:, 1] < COLLISION_PENALTY)
         if not len(feasible):
             continue
         index = feasible[np.argmin(data['objectives'][feasible, 0])]
