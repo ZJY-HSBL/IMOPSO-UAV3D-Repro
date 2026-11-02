@@ -1,0 +1,48 @@
+{
+  "seeds": [
+    42,
+    43,
+    44
+  ],
+  "scenarios": [
+    1,
+    2
+  ],
+  "iterations": 500,
+  "particles": 100,
+  "archive_size": 50,
+  "hv_samples": 12000,
+  "reference": [
+    1,
+    1,
+    1,
+    1
+  ],
+  "normalization": "Eq.10 min-max using shared fixed independent 3000-path calibration seed 1009 per scenario",
+  "continuous_collision_check": "analytic XY segment to equivalent-circle test, reported separately",
+  "provenance": "independent reconstruction; original MATLAB, exact settings and random seeds not supplied",
+  "case_1_objective_min": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "case_1_objective_max": [
+    0.3520449893543215,
+    0.42801850210111053,
+    0.6392742286295308,
+    0.4433477261284837
+  ],
+  "case_2_objective_min": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "case_2_objective_max": [
+    0.3520449893543215,
+    0.49538164724434125,
+    0.5009331108733633,
+    0.4433477261284837
+  ]
+}
