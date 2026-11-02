@@ -53,3 +53,39 @@ def test_smoke_all_four_algorithms():
         assert r.objectives.shape[1] == 4
         assert len(r.history) == 4
         assert np.isfinite(r.objectives).all()
+
+
+def test_paper_inf_and_finite_numeric_collision_semantics():
+    from imopso_uav3d.model import COLLISION_PENALTY
+    p = Problem(scenario=1)
+    a = np.linspace(0, 1, p.waypoints + 2)[1:-1, None]
+    path = (p.start[None] + a * (p.goal - p.start)).flatten()
+    assert p.evaluate(path)[0, 1] >= COLLISION_PENALTY
+    assert np.isinf(p.evaluate_paper(path)[0, 1])
+
+
+def test_continuous_collision_detector_and_short_segment():
+    p = Problem(scenario=1, samples_per_segment=2)
+    x = np.linspace(0, 1, p.waypoints + 2)[1:-1, None]
+    direct = (p.start[None] + x * (p.goal - p.start)).flatten()
+    assert p.exact_collision_mask(direct).tolist() == [True]
+
+
+def test_paper_eq10_fixed_minmax_and_calibration():
+    from imopso_uav3d.model import fixed_minmax, calibration_bounds
+    p = Problem(1)
+    lo, hi = calibration_bounds(p, size=1000, seed=1009)
+    assert np.all(lo == 0)
+    assert np.all(hi > lo)
+    np.testing.assert_allclose(fixed_minmax(lo, lo, hi), np.zeros(4))
+    np.testing.assert_allclose(fixed_minmax(hi, lo, hi), np.ones(4))
+
+
+def test_replication_protocol_determinism():
+    from imopso_uav3d.experiment import run
+    _, a = run(1, 'imopso', iterations=5, particles=12, seed=71,
+               archive_size=8, hv_samples=200, interval=1)
+    _, b = run(1, 'imopso', iterations=5, particles=12, seed=71,
+               archive_size=8, hv_samples=200, interval=1)
+    np.testing.assert_array_equal(a.objectives, b.objectives)
+    np.testing.assert_allclose(a.history, b.history)
