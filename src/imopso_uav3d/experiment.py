@@ -4,7 +4,7 @@ import csv
 import json
 from pathlib import Path
 import numpy as np
-from .model import Problem
+from .model import Problem, calibration_bounds, COLLISION_PENALTY
 from .optimizers import swarm, evolutionary
 
 METHODS = ('imopso', 'mopso', 'nsga2', 'pesa2')
@@ -15,8 +15,9 @@ def run(case=1, method='imopso', iterations=500, particles=100, seed=42,
     problem = Problem(scenario=case, waypoints=waypoints)
     rng = np.random.default_rng(seed)
     common_mc = np.random.default_rng(2026).random((hv_samples, 4))
+    bounds = calibration_bounds(problem, size=3000, seed=1009)
     kwargs = dict(particles=particles, iterations=iterations, archive_size=archive_size,
-                  interval=interval, mc_samples=common_mc)
+                  interval=interval, mc_samples=common_mc, norm_bounds=bounds)
     if method == 'imopso':
         result = swarm(problem, rng, improved=True, **kwargs)
     elif method == 'mopso':
@@ -33,7 +34,8 @@ def save(out, name, problem, result, seed):
     np.savez_compressed(out / f'{name}.npz', decisions=result.decisions,
                         objectives=result.objectives, history=np.array(result.history))
     summary = dict(name=name, seed=seed, scenario=problem.scenario, archive_size=len(result.objectives),
-                   feasible_solutions=int(np.sum(result.objectives[:, 1] < 1.)),
+                   feasible_solutions=int(np.sum(result.objectives[:, 1] < COLLISION_PENALTY)),
+                   continuously_safe_solutions=int(np.sum(~problem.exact_collision_mask(result.decisions))),
                    final_hv=result.history[-1][1], objective_means=result.objectives.mean(axis=0).tolist())
     (out / f'{name}.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
     return summary
@@ -59,7 +61,7 @@ def plot_case(out, case, results, problem):
         cx, cy, w, d = building
         ax.add_patch(Rectangle((cx-w/2, cy-d/2), w, d, facecolor='gray', alpha=.45))
     for method, result in results.items():
-        feasible = result.objectives[:, 1] < 1
+        feasible = result.objectives[:, 1] < COLLISION_PENALTY
         available = np.flatnonzero(feasible) if np.any(feasible) else np.arange(len(result.objectives))
         # Display feasible least-f1 archive member, not an arbitrary handpicked line.
         idx = available[np.argmin(result.objectives[available, 0])]
