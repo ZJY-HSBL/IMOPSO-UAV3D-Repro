@@ -3,6 +3,8 @@ from dataclasses import dataclass
 import numpy as np
 
 # Paper table 1: (cx, cy, width, depth); all buildings are 300 m high.
+COLLISION_PENALTY = 1000.0  # Numeric surrogate of paper equation (4): +infinity.
+
 BUILDINGS = np.array([
     [200, 300, 100, 100], [550, 250, 60, 60],
     [450, 550, 90, 90], [750, 600, 60, 60],
@@ -75,6 +77,31 @@ class Problem:
         positions[:, :, 2] += rng.normal(0., 30., (n, self.waypoints))
         return np.clip(positions.reshape(n, -1), self.lower, self.upper)
 
+    def exact_collision_mask(self, positions):
+        """Continuous XY circle test, independent of the sampled paper objective.
+
+        Returns a safety diagnostic, not a replacement for the paper's segment
+        sampling equation. The paper's equivalent circle is used, not the drawn
+        cuboid; its height does not affect the published obstacle objective.
+        """
+        p = self.paths(positions)
+        a, b = p[:, :-1, :2], p[:, 1:, :2]
+        d = b - a
+        centers = self.buildings[:, :2]
+        difference = centers[None, None, :, :] - a[:, :, None, :]
+        t = np.clip(np.sum(difference*d[:, :, None, :], axis=-1) /
+                    np.maximum(np.sum(d*d, axis=-1)[:, :, None], 1e-20), 0, 1)
+        closest = a[:, :, None, :] + t[..., None]*d[:, :, None, :]
+        dist = np.linalg.norm(closest-centers[None, None, :, :], axis=-1)
+        radii = np.hypot(self.buildings[:, 2]/2, self.buildings[:, 3]/2)+self.drone_radius
+        return np.any(dist < radii[None, None, :], axis=(1, 2))
+
+    def evaluate_paper(self, positions):
+        """Published objective convention: positive infinity at sampled collisions."""
+        values = self.evaluate(positions)
+        values[values[:, 1] >= COLLISION_PENALTY, 1] = np.inf
+        return values
+
     def evaluate(self, positions):
         """f1-f4 (paper eqs. 2-8); invalid XY obstacles receive f2 >= 1.
 
@@ -109,7 +136,7 @@ class Problem:
         collision = np.any(clearance < 0., axis=(1, 2))
         # Eq. (4) specifies +infinity at collisions. Store an explicit
         # finite infeasible penalty for stable Pareto, grid, and MC-HV handling.
-        f2 = np.where(collision, 1. + np.maximum(0., -clearance).sum(axis=(1, 2)) / (self.waypoints + 1), f2)
+        f2 = np.where(collision, COLLISION_PENALTY + np.maximum(0., -clearance).sum(axis=(1, 2)) / (self.waypoints + 1), f2)
         return np.column_stack((f1, f2, f3, f4))
 
 
@@ -131,3 +158,30 @@ def hypervolume_mc(f, samples):
     if not len(f):
         return 0.
     return float(np.any(np.all(f[None, :, :] <= samples[:, None, :], axis=2), axis=1).mean())
+
+def fixed_minmax(f, lo, hi):
+    """Paper Eq.(10) with fixed shared objective bounds, frozen before algorithms.
+
+    The authors do not disclose the bounds or when they are recomputed. A common
+    frozen reference is needed for *comparable* between-algorithm HV curves.
+    Values are deliberately not clipped: >1 solutions are dominated by the
+    [1,1,1,1] HV reference and values <0 may indicate bad calibration bounds.
+    """
+    lo, hi = np.asarray(lo), np.asarray(hi)
+    return (np.asarray(f) - lo) / np.maximum(hi - lo, 1e-12)
+
+
+def calibration_bounds(problem, size=3000, seed=1009):
+    """Common, algorithm-independent calibration population for Eq.(10).
+
+    Infeasible samples are excluded from each objective's calibration range.
+    The paper does not specify these calibration samples or normalization rules.
+    """
+    rng = np.random.default_rng(seed)
+    samples = problem.evaluate(problem.sample_positions(size, rng))
+    feasible = samples[samples[:, 1] < COLLISION_PENALTY]
+    if len(feasible) < 20:
+        raise ValueError('too few feasible calibration samples')
+    lo = np.minimum(feasible.min(axis=0), 0)
+    hi = np.maximum(feasible.max(axis=0), lo+1e-8)
+    return lo, hi
