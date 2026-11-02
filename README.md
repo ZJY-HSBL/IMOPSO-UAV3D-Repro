@@ -67,3 +67,18 @@ python -m imopso_uav3d.visualize3d --results results --scenario 2 --seed 42
 ```
 
 The 3D bars use the 300 m heights published in the paper. The default optimizer's written threat equation nevertheless uses only horizontal distances, as disclosed above.
+## Measured single-seed evidence / 单种子实测结果
+
+Full run: 500 iterations, 100 particles, archive size 50, fixed seed 42; all four optimizers in both scenarios. [CSV summary](evidence/seed42_500iters_summary.csv) explains the raw numerical results.
+
+| Scenario | IMOPSO | MOPSO | NSGA-II | PESA-II |
+|---|---:|---:|---:|---:|
+| Case 1 MC-HV | 0.9943 | 0.8620 | 0.9918 | 0.8552 |
+| Case 2 MC-HV | 0.9927 | 0.9932 | 0.9922 | 0.9918 |
+
+![Scenario 1 HV](evidence/scenario_1_hv.svg)
+![Scenario 1 paths](evidence/scenario_1_paths.svg)
+![Scenario 2 HV](evidence/scenario_2_hv.svg)
+![Scenario 2 paths](evidence/scenario_2_paths.svg)
+
+**Interpretation:** This independent implementation did not uniformly reproduce IMOPSO's reported superiority; in case 2 MOPSO was slightly higher in this single run. The paths and the two HV charts are generated from this implementation's outputs, **not digitized from the paper**.
