@@ -1,84 +1,66 @@
 # IMOPSO-UAV3D-Repro
 
-**Independent, executable reconstruction / 独立可运行复现** of:
+徐航、廖运鹏、陈楚泽：《基于改进多目标粒子群优化算法的三维城区无人机路径规划》，《莆田学院学报》，2026，33(5)：92–100。
 
-> Xu Hang, Liao Yunpeng, Chen Chuze (2026). “Three-dimensional Urban Unmanned Aerial Vehicles Path Planning Based on Improved Multi-Objective Particle Swarm Optimization” / 徐航等：《基于改进多目标粒子群优化算法的三维城区无人机路径规划》. *Journal of Putian University / 莆田学院学报*, **33**(5), 92–100.
+**复现等级：算法公式与实验流程的独立 Python 复现；尚不是原作者 MATLAB 代码的严格数值复现。** 不使用原文图像冒充实测图，不以任意调参强行匹配结果。
 
-## What is reproduced / 复现内容
+## 内容
 
-- Scenario 1 (8 buildings) and scenario 2 (13 buildings), 1 km × 1 km map, with 300 m-tall buildings; all plan coordinates transcribed from Table 1.
-- Four minimization objectives from equations (2)–(8): normalized excess path length, clearance threat, altitude offset, mean turning angle.
-- IMOPSO with particle-to-archive quality, decreasing mutation probability (11)–(15), expanded objective-space grids (16)–(18), adaptive sparse-grid leaders (19)–(21), and singleton-protective crowded-grid pruning (22)–(23).
-- MOPSO, NSGA-II, PESA-II algorithm-family baselines, shared-seed Monte Carlo 4-D hypervolume, Pareto archives, top-view path maps, and HV curves.
-- Repeatable command-line simulation, NumPy archive export, CSV summary, and unit tests.
+- 表 1：1 km × 1 km 地图，8 个 / 13 个建筑物，各高 300 m。
+- 式 (2)–(9)：航程、二维等效圆威胁、理想高度偏差、转角的四目标模型。
+- 式 (11)–(15)：非支配集距离、自适应变异和边界变异率。
+- 式 (16)–(23)：扩展目标空间网格、动态领导者、稀疏解保护与档案截断。
+- MOPSO、NSGA-II、PESA-II 对比实现；NSGA-II 使用非支配排序、拥挤距离和二元锦标赛。基线不共用 IMOPSO 的增强档案维护。
+- 式 (10)：对所有算法使用同一套预先冻结的目标归一化边界。HV 参考点为 [1,1,1,1]，使用共同的蒙特卡洛样本。
+- 保留论文采样式威胁目标；额外计算连续二维线段-圆形障碍碰撞诊断，报告路径是否真正安全。
 
-## Run / 运行
+## 本地运行
 
 ```bash
 python -m pip install -e ".[test]"
 pytest -q
-python -m imopso_uav3d.experiment --case both --algorithms imopso mopso nsga2 pesa2 \
-  --iterations 500 --particles 100 --archive-size 50 --seed 42 --output results
+python -m imopso_uav3d.replicate --seeds 42 43 44 --scenarios 1 2 --iterations 500 --particles 100 --archive-size 50 --hv-samples 12000 --output rigorous_results
+python -m imopso_uav3d.visualize3d --results rigorous_results --scenario 1 --seed 42
+python -m imopso_uav3d.visualize3d --results rigorous_results --scenario 2 --seed 42
 ```
 
-Faster check / 快速验证：
+复现实验导出各随机种子的 `.npz`（决策变量、四目标、HV 逐轮历史）、`.json`、`runs.csv`、`paired_comparisons.csv`、`protocol.json`。在 GitHub 的 `evidence/` 下提供精简的真实数据、本文表 2 原始统计与可视化。
 
-```bash
-python -m imopso_uav3d.experiment --case both --iterations 35 --particles 45 --archive-size 30 --seed 2026 --hv-samples 2000 --interval 5
-```
+## 论文明示参数
 
-The command writes `results/summary.csv`, individual `scenario_*_{algorithm}_seed_*.npz` / `.json`, and `scenario_*_hv.png` / `scenario_*_paths.png`.
+种群 100，档案容量 50，初始惯性权重 1，每代乘 0.98，学习因子 c1=c2=1.5；NSGA-II 交叉/变异率 0.7/0.3；PESA-II 为 0.8/0.3；变异率上/下限 0.8/0.01，距离阈值 0.5，扩展网格比例 0.1，单个解的网格删除保护系数 0.5，删除压力 2。
 
-## Reproduction boundaries / 复现边界
+## 论文未公开、必须假设的设置
 
-**This is not the authors' original MATLAB R2024a source, nor a verified numerical replication of their Table 2.** The paper does not fully specify the start/end nodes, waypoints count, altitude bounds, drone radius, safety margin, number of segment samples, grid cell count, mutation perturbation operator, benchmark implementation or experiment seeds. To make experiments executable, the implementation uses and clearly exposes these **non-paper assumptions**:
+| 参数 | 复现约定 |
+|---|---|
+| 起终点 | (0,0,200) 至 (1000,1000,200) m |
+| 中间航路点 | 8 |
+| 高度范围 | [120,280] m |
+| 无人机等效尺寸、安全裕度 | 5 m、30 m |
+| 路段威胁采样 | 每段 11 点 |
+| 每目标网格数 | 10 |
+| 变异扰动算子 | 单个随机坐标，零均值高斯扰动，标准差为该坐标范围的 0.13 |
+| 基础 MOPSO 变异率 | 0.1 |
+| 未明示的 PSO 速度范围 | 每个坐标搜索范围的 ±20% |
+| 式 (10) 的全局 min/max 归一化 | 每场景使用独立随机数生成的 3000 条候选路线，种子 1009；各算法共享一次冻结的可行样本 min/max |
+| 其他算法交叉/变异算子 | 独立工程实现，非原作者代码 |
+| 随机种子/蒙特卡洛采样数 | 种子 42、43、44；每个 HV 点 12000 个共同采样 |
 
-| Item / 参数 | Default / 默认值 | Provenance |
-|---|---:|---|
-| Start / goal | (0,0,200) / (1000,1000,200) m | Assumed (not explicit in paper) |
-| Intermediate nodes | 8 | Assumed |
-| z bounds | [120, 280] m | Assumed |
-| Drone equivalent radius / safety distance | 5 m / 30 m | Assumed |
-| Samples per segment | 11 | Assumed |
-| Grid subdivision | 10 per objective | Assumed |
-| IMOPSO Gaussian coordinate perturbation | std = 0.13 × coordinate range | Assumed (paper provides probability, not perturbation operator) |
-| Ordinary MOPSO mutation | probability 0.1 | Assumed |
-| Population / archive / PSO inertia / acceleration | 100 / 50 / 1 × 0.98 each iteration / c1=c2=1.5 | Paper section 4.1 |
-| NSGA-II crossover / mutation rates | 0.7 / 0.3 | Paper section 4.1 |
-| PESA-II crossover / mutation rates | 0.8 / 0.3 | Paper section 4.1 |
-| Mutation probability caps / quality distance / grid expansion | 0.01–0.80 / threshold 0.5 / 0.1 | Paper sections 3.2–3.3 |
-| Monte Carlo HV | 6000 samples, fixed random generator, reference [1,1,1,1] | Paper ref point; sample count assumed |
+**核心限制：**原论文只给式 (10) 的 min-max 数学形式，没有给出基准上下界如何选取；也没有提供路径编码、初始化、扰动方式、随机种子等足以重现图 3/4 和表 2 的全部细节。没有这些信息无法证明数值完全一致。
 
-**Clarifications / 数值约定:** (1) The paper's threat formula uses 2D equivalent-circle distances even though the city objects are 3D cuboids; the default scorer follows the *written formula* (all-height XY exclusion), not a physical 3D box intersection. (2) Paper eq. (4) assigns infinite collision cost; to avoid `inf` contaminating archive grids and Monte Carlo HV, collisions receive a finite score `f2 >= 1` and feasible paths take archive priority. (3) Paper eq. (7) writes `arctan(cross/dot)`; this implementation uses `atan2(norm(cross), dot)` for the correctly unsigned [0,pi] turn angle. (4) NSGA-II/PESA-II operators are faithful algorithm-family implementations with independent, disclosed operator choices, not original unshared MATLAB code. (5) HV is computed from **raw objectives with one common fixed reference**, rather than independently min-max normalizing each algorithm's archive; this preserves comparability between algorithms.
+式 (4) 的碰撞代价是正无穷；为了维持算法数值稳定，内部使用大于等于 1000 的有限代理值，且以是否实际碰撞而非威胁值是否超过 1 判断可行性。`Problem.evaluate_paper()` 返回论文要求的正无穷。式 (7) 的三维转角使用 `atan2` 计算正确的无符号角度，区别于论文直接写出的 `arctan` 形式。
 
-## Reproducibility checks / 结果验证
+**注意：**建筑物在图中为三维长方体，但论文的威胁函数只使用二维圆半径和 XY 距离，没有 3D 盒体碰撞判定；代码按原文目标处理，并额外验证连续二维避障。
 
-The `tests/` suite checks scene construction, geometry, archive capacity, Pareto dominance, normalized HV and short smoke runs for all four algorithms. **Do not claim IMOPSO is better from a small smoke run.** Meaningful validation requires repeated seeds, common compute budgets, uncertainty intervals, and direct comparison to Table 2 on the same fully specified problem.
+## 证据 / Evidence
 
-## Reference / 引用
+- [论文表 2 全部 32 组 min/max/mean](evidence/paper_table2_reference.csv)
+- [种子 42 场景 1 超体积](evidence/scenario_1_hv.svg) · [路径](evidence/scenario_1_paths.svg)
+- [种子 42 场景 2 超体积](evidence/scenario_2_hv.svg) · [路径](evidence/scenario_2_paths.svg)
 
-This project is a third-party educational/research reproduction. Please cite the original paper; no author affiliation or endorsement is claimed.
+图表来自独立运行的存档，**不是论文结果的数字化描摹**。复现差异和不确定性将在 [复现审计报告](evidence/REPRODUCTION_AUDIT.md) 中逐项说明。
 
-## Three-dimensional view / 三维视图
+## License
 
-```bash
-python -m imopso_uav3d.visualize3d --results results --scenario 1 --seed 42
-python -m imopso_uav3d.visualize3d --results results --scenario 2 --seed 42
-```
-
-The 3D bars use the 300 m heights published in the paper. The default optimizer's written threat equation nevertheless uses only horizontal distances, as disclosed above.
-## Measured single-seed evidence / 单种子实测结果
-
-Full run: 500 iterations, 100 particles, archive size 50, fixed seed 42; all four optimizers in both scenarios. [CSV summary](evidence/seed42_500iters_summary.csv) explains the raw numerical results.
-
-| Scenario | IMOPSO | MOPSO | NSGA-II | PESA-II |
-|---|---:|---:|---:|---:|
-| Case 1 MC-HV | 0.9943 | 0.8620 | 0.9918 | 0.8552 |
-| Case 2 MC-HV | 0.9927 | 0.9932 | 0.9922 | 0.9918 |
-
-![Scenario 1 HV](evidence/scenario_1_hv.svg)
-![Scenario 1 paths](evidence/scenario_1_paths.svg)
-![Scenario 2 HV](evidence/scenario_2_hv.svg)
-![Scenario 2 paths](evidence/scenario_2_paths.svg)
-
-**Interpretation:** This independent implementation did not uniformly reproduce IMOPSO's reported superiority; in case 2 MOPSO was slightly higher in this single run. The paths and the two HV charts are generated from this implementation's outputs, **not digitized from the paper**.
+MIT — 第三方非官方科研复现。请引用原论文。
