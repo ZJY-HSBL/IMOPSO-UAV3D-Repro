@@ -145,6 +145,21 @@ def nsga_elite(x, f, count):
     return x[keep], f[keep]
 
 
+def tournament_selection(f, rng, count):
+    """NSGA-II binary tournament using nondominated rank and crowding distance."""
+    ranks = np.empty(len(f), dtype=int)
+    distances = np.empty(len(f), dtype=float)
+    for rank, layer in enumerate(fronts(f)):
+        ranks[layer] = rank
+        distances[layer] = crowding(f[layer])
+    pairs = rng.integers(0, len(f), size=(count, 2))
+    a, b = pairs[:, 0], pairs[:, 1]
+    choose_a = (ranks[a] < ranks[b]) | ((ranks[a] == ranks[b]) & (distances[a] > distances[b]))
+    ties = (ranks[a] == ranks[b]) & (distances[a] == distances[b])
+    choose_a = choose_a | (ties & (rng.random(count) < .5))
+    return np.where(choose_a, a, b)
+
+
 def genetic_step(x, rng, pc=.7, pm=.3, sigma=.08, lower=None, upper=None):
     """Uniform arithmetic crossover + single-coordinate Gaussian mutation.
 
@@ -181,8 +196,8 @@ def evolutionary(problem, rng, method='nsga2', particles=100, iterations=500,
     for iteration in range(1, iterations + 1):
         if method == 'nsga2':
             # Elitist selection from the previous iteration.
-            parents, _ = nsga_elite(x, f, particles)
-            child = genetic_step(parents, rng, .7, .3, lower=problem.lower, upper=problem.upper)
+            parent_idx = tournament_selection(f, rng, particles)
+            child = genetic_step(x[parent_idx], rng, .7, .3, lower=problem.lower, upper=problem.upper)
             cf = problem.evaluate(child)
             x, f = nsga_elite(np.vstack((x, child)), np.vstack((f, cf)), particles)
         else:
@@ -193,7 +208,7 @@ def evolutionary(problem, rng, method='nsga2', particles=100, iterations=500,
                                  lower=problem.lower, upper=problem.upper)
             cf = problem.evaluate(child)
             x, f = child, cf
-        ax, af = truncate_archive(np.vstack((ax, x)), np.vstack((af, f)), archive_size, rng, True)
+        ax, af = truncate_archive(np.vstack((ax, x)), np.vstack((af, f)), archive_size, rng, False)
         if iteration % interval == 0 or iteration == iterations:
             history.append((iteration, hv(af)))
     return Result(ax, af, history)
