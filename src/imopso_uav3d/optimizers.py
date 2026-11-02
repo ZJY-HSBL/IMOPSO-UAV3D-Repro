@@ -1,7 +1,7 @@
 """MOPSO, IMOPSO, NSGA-II and region-based PESA-II baseline implementations."""
 from dataclasses import dataclass
 import numpy as np
-from .model import non_dominated, hypervolume_mc
+from .model import non_dominated, hypervolume_mc, fixed_minmax, COLLISION_PENALTY
 
 
 def grid_ids(f, bins=10, expand=0.1):
@@ -34,7 +34,7 @@ def truncate_archive(x, f, capacity, rng, enhanced):
     _, first = np.unique(np.round(f, 10), axis=0, return_index=True)
     x, f = x[np.sort(first)], f[np.sort(first)]
     # Prefer any collision-free paths over colliding paths.
-    feasible = f[:, 1] < 1.
+    feasible = f[:, 1] < COLLISION_PENALTY
     if np.any(feasible):
         x, f = x[feasible], f[feasible]
     keep = non_dominated(f)
@@ -64,7 +64,7 @@ class Result:
 
 
 def swarm(problem, rng, particles=100, iterations=500, archive_size=50,
-          improved=True, interval=25, mc_samples=None):
+          improved=True, interval=25, mc_samples=None, norm_bounds=None):
     x = problem.sample_positions(particles, rng)
     v = np.zeros_like(x)
     f = problem.evaluate(x)
@@ -72,7 +72,8 @@ def swarm(problem, rng, particles=100, iterations=500, archive_size=50,
     ax, af = truncate_archive(x, f, archive_size, rng, improved)
     if mc_samples is None:
         mc_samples = np.random.default_rng(12345).random((6000, 4))
-    history = [(0, hypervolume_mc(af, mc_samples))]
+    hv = lambda arr: hypervolume_mc(fixed_minmax(arr, *norm_bounds) if norm_bounds is not None else arr, mc_samples)
+    history = [(0, hv(af))]
     w = 1.
     for iteration in range(1, iterations + 1):
         leaders = np.stack([ax[choose_by_density(af, rng, archive_size=archive_size,
@@ -103,7 +104,7 @@ def swarm(problem, rng, particles=100, iterations=500, archive_size=50,
         ax, af = truncate_archive(np.vstack((ax, x)), np.vstack((af, f)), archive_size, rng, improved)
         w *= .98
         if iteration % interval == 0 or iteration == iterations:
-            history.append((iteration, hypervolume_mc(af, mc_samples)))
+            history.append((iteration, hv(af)))
     return Result(ax, af, history)
 
 
@@ -167,7 +168,7 @@ def genetic_step(x, rng, pc=.7, pm=.3, sigma=.08, lower=None, upper=None):
 
 
 def evolutionary(problem, rng, method='nsga2', particles=100, iterations=500,
-                 archive_size=50, interval=25, mc_samples=None):
+                 archive_size=50, interval=25, mc_samples=None, norm_bounds=None):
     if method not in ('nsga2', 'pesa2'):
         raise ValueError('unknown evolutionary algorithm')
     if mc_samples is None:
@@ -175,7 +176,8 @@ def evolutionary(problem, rng, method='nsga2', particles=100, iterations=500,
     x = problem.sample_positions(particles, rng)
     f = problem.evaluate(x)
     ax, af = truncate_archive(x, f, archive_size, rng, True)
-    history = [(0, hypervolume_mc(af, mc_samples))]
+    hv = lambda arr: hypervolume_mc(fixed_minmax(arr, *norm_bounds) if norm_bounds is not None else arr, mc_samples)
+    history = [(0, hv(af))]
     for iteration in range(1, iterations + 1):
         if method == 'nsga2':
             # Elitist selection from the previous iteration.
@@ -193,5 +195,5 @@ def evolutionary(problem, rng, method='nsga2', particles=100, iterations=500,
             x, f = child, cf
         ax, af = truncate_archive(np.vstack((ax, x)), np.vstack((af, f)), archive_size, rng, True)
         if iteration % interval == 0 or iteration == iterations:
-            history.append((iteration, hypervolume_mc(af, mc_samples)))
+            history.append((iteration, hv(af)))
     return Result(ax, af, history)
